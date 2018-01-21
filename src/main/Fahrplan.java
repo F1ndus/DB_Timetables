@@ -1,5 +1,6 @@
 package main;
 
+import main.generated.HistoricDelay;
 import main.generated.Timetable;
 
 import javax.xml.bind.JAXBContext;
@@ -7,18 +8,30 @@ import javax.xml.bind.JAXBException;
 import javax.xml.bind.Unmarshaller;
 import java.io.*;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
 import java.net.URL;
-import java.sql.Time;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Properties;
-import java.util.stream.Collectors;
 
 /**
  * Created by Philipp on 16.12.2017.
  */
 public class Fahrplan {
+
+    static Properties prop;
+    static {
+        InputStream str = null;
+        try {
+            str = new FileInputStream("token.properties");
+            prop = new Properties();
+            prop.load(str);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
     private static final String URL = "https://api.deutschebahn.com/timetables/v1/plan/EVAID/DATE/HOUR";
 
     public static Timetable downloadTimeTable(LocalDateTime date, int evaID) throws JAXBException, IOException {
@@ -32,25 +45,44 @@ public class Fahrplan {
 
         System.out.println("Request: " +  url);
 
-        InputStream str = new FileInputStream("token.properties");
-        Properties prop = new Properties();
-        prop.load(str);
 
-
-        HttpURLConnection con = (HttpURLConnection) url.openConnection();
-        con.setRequestMethod("GET");
-        con.setRequestProperty("Accept","application/xml");
-        con.setRequestProperty("Authorization","Bearer " + prop.getProperty("token"));
-
-        try(InputStream dbxmlresp = con.getInputStream()) {
-            JAXBContext jaxbContext = JAXBContext.newInstance(Timetable.class);
-            Unmarshaller jaxbUnmarshaller = jaxbContext.createUnmarshaller();
-            return (Timetable) jaxbUnmarshaller.unmarshal(dbxmlresp);
+        try(InputStream dbxmlresp = downloadXml(url)) {
+            return unmarshal(dbxmlresp,Timetable.class);
         } catch (Exception e) {
             e.getMessage();
             throw e;
         }
     }
+
+    public static Timetable getTimeTableChanges(int eva) throws IOException, JAXBException {
+        java.net.URL url = new URL("https://api.deutschebahn.com/timetables/v1/fchg/" + eva);
+        return unmarshal(downloadXml(url), Timetable.class);
+    }
+
+
+
+    private static InputStream downloadXml(URL url) throws IOException {
+        HttpURLConnection con = (HttpURLConnection) url.openConnection();
+        con.setRequestMethod("GET");
+        con.setRequestProperty("Accept","application/xml");
+        con.setRequestProperty("Authorization","Bearer " + prop.getProperty("token"));
+
+        return con.getInputStream();
+    }
+
+    private static <T> T unmarshal(InputStream stream, Class<T> clazz) throws JAXBException, IOException {
+        try(InputStream dbxmlresp = stream) {
+            JAXBContext jaxbContext = JAXBContext.newInstance(clazz);
+            Unmarshaller jaxbUnmarshaller = jaxbContext.createUnmarshaller();
+            Object k = jaxbUnmarshaller.unmarshal(dbxmlresp);
+            return (T) k;
+        } catch (Exception e) {
+            e.getMessage();
+            throw e;
+        }
+    }
+
+
 
     public static Timetable download24HourTimeTable(LocalDateTime date, int evaID) throws JAXBException, IOException, InterruptedException {
         int counter = 24;
@@ -64,7 +96,7 @@ public class Fahrplan {
                 Timetable temptimetable = downloadTimeTable(tempdate, evaID);
                 merged.getS().addAll(temptimetable.getS());
                 counter--;
-            } catch (FileNotFoundException e) {
+            } catch (IOException e) {
                 System.out.println("Max length reached: " + tempdate.getHour());
                 break;
             }

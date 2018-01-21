@@ -364,4 +364,9 @@ public class TimetableStop
         this.eva = value;
     }
 
+    @Override
+    public boolean equals(Object obj) {
+        TimetableStop stop = (TimetableStop) obj;
+        return stop.getId().equals(this.getId());
+    }
 }
